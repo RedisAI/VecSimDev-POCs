@@ -1,3 +1,3 @@
 # VecSimDev-POCs
 
-A collection of self contained reproducationable POCs for Vector Search purposes
+A collection of self contained reproducible POCs for Vector Search purposes
