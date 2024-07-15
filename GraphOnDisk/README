@@ -1,0 +1,5 @@
+A POC that compares between two graph on disk storage implementation:
+1. Directly in files
+2. Using rocksDB interface
+
+To reproduce:
