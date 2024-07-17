@@ -3,3 +3,7 @@ A POC that compares between two graph on disk storage implementation:
 2. Using rocksDB interface
 
 To reproduce:
+1. Clone rocksDB into a subdirectory named rocksdb (https://github.com/facebook/rocksdb)
+2. Build rocksDB
+3. run `cmake . && make && ./bm_ssd` to run the benchmarks
+4. Check out `bm_options.cpp` if you want to change the benchmark parameters
