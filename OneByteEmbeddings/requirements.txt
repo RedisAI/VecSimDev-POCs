@@ -1,0 +1,5 @@
+datasets
+cohere
+sentence_transformers
+scipy
+pympler
