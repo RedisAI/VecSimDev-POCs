@@ -5,15 +5,16 @@ from scipy import spatial
 import time
 from pympler import asizeof
 import numpy as np
+from typing import List
 # Load dataset
 # https://huggingface.co/datasets/wikimedia/wikipedia
 docs_stream = load_dataset("wikimedia/wikipedia", "20231101.en", split="train", streaming=True)
 
 # cohere token
-api_key = "TRuXidHldOyF5tGuQcrk8lsFuEp83ncmjRsBm2xq"
+api_key = ""
 co = cohere.Client(api_key)
 
-dataset_size = 10000
+dataset_size = 1000
 calibration_set_size = int(dataset_size/10)
 queries_num = 10
 
@@ -53,25 +54,29 @@ def count_correct(gt_results, results):
 
     return correct
 
-def dataset_and_queries_embeddings(dataset_texts, queries_texts, embedding_type: str):
-    start_time = time.time()
-    dataset_embeddings = co.embed(texts=dataset_texts, model="embed-english-v3.0", input_type="search_document", embedding_types=[embedding_type]).embeddings
-    dataset_time = time.time() - start_time
-    dataset_embeddings = getattr(dataset_embeddings, embedding_type)
-    # numpy has less memory overhead than a list
-    dataset_embeddings = np.array(dataset_embeddings, dtype=numpy_types_dict[embedding_type])
-    # dataset_embeddings = np.array(dataset_embeddings)
+def dataset_and_queries_embeddings(dataset_texts, queries_texts, embedding_types: List[str]):
+    dataset_and_queries_embeddings_dict = {}
+    for embedding_type in embedding_types:
+        start_time = time.time()
+        dataset_embeddings = co.embed(texts=dataset_texts, model="embed-english-v3.0", input_type="search_document", embedding_types=[embedding_type]).embeddings
+        dataset_time = time.time() - start_time
+        dataset_embeddings = getattr(dataset_embeddings, embedding_type)
+        # numpy has less memory overhead than a list
+        dataset_embeddings = np.array(dataset_embeddings, dtype=numpy_types_dict[embedding_type])
+        # dataset_embeddings = np.array(dataset_embeddings)
 
-    print(f"Generating {len(dataset_embeddings)} dataset embeddings took {dataset_time} seconds")
-    start_time = time.time()
 
-    queries_embeddings = co.embed(texts=queries_texts, model="embed-english-v3.0", input_type="search_query", embedding_types=[embedding_type]).embeddings
-    quries_time = time.time() - start_time
-    queries_embeddings = getattr(queries_embeddings, embedding_type)
-    queries_embeddings = np.array(queries_embeddings, dtype=numpy_types_dict[embedding_type])
-    # queries_embeddings = np.array(queries_embeddings)
-    print(f"Generating {len(queries_embeddings)} queries embeddings took {quries_time} seconds")
-    return dataset_embeddings, queries_embeddings
+        print(f"Generating {len(dataset_embeddings)} dataset embeddings took {dataset_time} seconds")
+        start_time = time.time()
+
+        queries_embeddings = co.embed(texts=queries_texts, model="embed-english-v3.0", input_type="search_query", embedding_types=[embedding_type]).embeddings
+        quries_time = time.time() - start_time
+        queries_embeddings = getattr(queries_embeddings, embedding_type)
+        queries_embeddings = np.array(queries_embeddings, dtype=numpy_types_dict[embedding_type])
+        # queries_embeddings = np.array(queries_embeddings)
+        print(f"Generating {len(queries_embeddings)} queries embeddings took {quries_time} seconds")
+        dataset_and_queries_embeddings_dict[embedding_type] = (dataset_embeddings, queries_embeddings)
+        return dataset_and_queries_embeddings_dict
 
 def dataset_and_queries_SQ_embeddings(float_embeddings, float_queries_embeddings, embedding_type: str):
     start_time = time.time()
@@ -101,6 +106,8 @@ def batch_knn(queries_embeddings, dataset_embeddings, k = 10):
 def size_in_mb_pympler(obj):
     return asizeof.asizeof(obj) / (1024 * 1024)
 
+VECTORS=0
+QUERIES=1
 def main():
     k = 10
     dataset_texts, dataset_set_loadtime = populate_texts_list(docs_stream, dataset_size)
@@ -115,16 +122,17 @@ def main():
 
     # Get GT ids
     # generate dataset embeddings using a dedicated model
-    float_embeddings, float_query_embeddings = dataset_and_queries_embeddings(dataset_texts, queries_texts, "float")
+    # dataset_and_queries_embeddings returns a dict of (type_embeddings, type_queries_embeddings) tuples
+    embeddings_dict = dataset_and_queries_embeddings(dataset_texts, queries_texts, ["float", "int8", "uint8"])
 
-    embed_size_mb_pympler = size_in_mb_pympler(float_embeddings)
+    embed_size_mb_pympler = size_in_mb_pympler(embeddings_dict["float"][VECTORS])
     print(f"Memory of float_embeddings: {embed_size_mb_pympler} MB")
     print(f"Estimated memory required for 1M documents: {float(1_000_000/dataset_size) * (embed_size_mb_pympler/1024)} GB")
 
-    gt_res = batch_knn(float_query_embeddings, float_embeddings, k = 10)
+    gt_res = batch_knn(embeddings_dict["float"][QUERIES], embeddings_dict["float"][VECTORS], k = 10)
 
     for onebyte_type in ["int8", "uint8"]:
-        embeddings, queries_embeddings = dataset_and_queries_embeddings(dataset_texts, queries_texts, onebyte_type)
+        embeddings, queries_embeddings = embeddings_dict[onebyte_type]
         print(f"Generated {onebyte_type} embeddings. Example vec slice = {embeddings[0][:10]}")
         correct = 0
         for i, query in enumerate(queries_embeddings):
