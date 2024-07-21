@@ -11,12 +11,11 @@ import pickle
 
 # Get embeddings
 # https://huggingface.co/datasets/Cohere/wikipedia-2023-11-embed-multilingual-v3-int8-binary
-lang = "simple" #Use the Simple English Wikipedia subset
+lang = "en" #Use the English Wikipedia subset
 int8_docs_stream = load_dataset("Cohere/wikipedia-2023-11-embed-multilingual-v3-int8-binary", lang, split="train", streaming=True)
 float32_docs_stream = load_dataset("Cohere/wikipedia-2023-11-embed-multilingual-v3", lang, split="train", streaming=True)
 
-# dataset_size = 100_000_000
-dataset_size = 100
+dataset_size = 1_000_000
 calibration_set_size = int(dataset_size/10)
 queries_num = 10
 
@@ -38,35 +37,43 @@ def dataset_and_queries_embeddings(docs_stream, embeddings_field, embedding_type
             if not isinstance(embeddings, dict) or 'dataset_embeddings' not in embeddings or 'queries_embeddings' not in embeddings:
                 raise ValueError("Loaded embeddings do not have the expected format or keys.")
         dataset_embeddings = embeddings['dataset_embeddings']
+        assert len(dataset_embeddings) == dataset_size
         queries_embeddings = embeddings['queries_embeddings']
+        assert len(queries_embeddings) == queries_num
         # Additional checks to ensure data integrity and type
         if not isinstance(dataset_embeddings, np.ndarray) or not isinstance(queries_embeddings, np.ndarray):
             raise TypeError("Loaded embeddings are not numpy arrays as expected.")
 
     else:
         print("Embeddings file not found. Generating embeddings...")
+        batch_size = calibration_set_size
         dataset_embeddings = []
-        # dataset_titles = []
         start_time = time.time()
-        for i, doc in enumerate(docs_stream):
-            dataset_embeddings.append(doc[embeddings_field])
-            # dataset_titles.append(doc['title'])
-            if i == dataset_size - 1:
-                break
-        assert len(dataset_embeddings) == dataset_size
+        for i, processed_docs_num in enumerate(range(0, dataset_size, batch_size)):
+            assert len(dataset_embeddings) == processed_docs_num, f"expected {len(dataset_embeddings)} == {processed_docs_num}"
+            curr_docs_stream = docs_stream.skip(processed_docs_num)
+            curr_docs_stream = curr_docs_stream.take(batch_size)
+            for doc in curr_docs_stream:
+                dataset_embeddings.append(doc[embeddings_field])
+            print(f"Done loading batch {i}, example slice: ", dataset_embeddings[-1][:5])
         dataset_embeddings = np.array(dataset_embeddings, dtype=numpy_types_dict[embedding_type])
         dataset_load_time = time.time() - start_time
         print(f"Loading {dataset_size} dataset embeddings took {dataset_load_time} seconds")
+        # docs = docs_stream.take(dataset_size)
+        # dataset_titles = []
+        # for doc in docs:
+        #     dataset_embeddings.append(doc[embeddings_field])
+            # dataset_titles.append(doc['title'])
 
         # Continue iterating docs stream to get queries
+        queries_docs = docs_stream.skip(dataset_size)
+        queries_docs = queries_docs.take(queries_num)
         queries_embeddings = []
         # queries_titles = []
         start_time = time.time()
-        for i, doc in enumerate(docs_stream):
+        for doc in queries_docs:
             queries_embeddings.append(doc[embeddings_field])
             # dataset_titles.append(doc['title'])
-            if i == queries_num - 1:
-                break
         assert len(queries_embeddings) == queries_num
         queries_embeddings = np.array(queries_embeddings, dtype=numpy_types_dict[embedding_type])
         queries_load_time = time.time() - start_time
@@ -82,7 +89,7 @@ def dataset_and_queries_embeddings(docs_stream, embeddings_field, embedding_type
         print(f"Embeddings have been stored in {embeddings_file}")
 
         # return dataset_embeddings, dataset_titles, queries_embeddings, queries_titles
-    return dataset_embeddings, queries_embeddings
+    return embeddings['dataset_embeddings'], embeddings['queries_embeddings']
 
 def knn_L2(query, doc_embeddings, k = 10):
     # compute the euclidean distance between the query and all the documents
@@ -138,20 +145,24 @@ def main():
     k = 10
 
     # float32_vector_embeddings, float32_dataset_titles, float32_queries_embeddings, float32_queries_titles = dataset_and_queries_embeddings(float32_docs_stream, 'emb')
+    print("Get float32 embeddings and queries")
     float32_vector_embeddings, float32_queries_embeddings = dataset_and_queries_embeddings(float32_docs_stream, 'emb', "float32")
-    print("type of float32_vector_embeddings: ", type(float32_vector_embeddings))
-    print(f"Loaded float32 embeddings and queries. \n\t Example vec slice = {float32_vector_embeddings[0][:5]}"
-        f"\n\t Example query slice = {float32_queries_embeddings[0][:5]}")
-    embed_size_mb_pympler = size_in_mb_pympler(float32_vector_embeddings)
-    print(f"Memory of float_embeddings: {embed_size_mb_pympler} MB")
-    print(f"Estimated memory required for 1M float32 embeddings: {float(1_000_000/dataset_size) * (embed_size_mb_pympler/1024)} GB")
+    print(f"\n\t Example vec slice = {float32_vector_embeddings[1][:5]}"
+        f"\n\t Example query slice = {float32_queries_embeddings[1][:5]}\n")
 
+    # embed_size_mb_pympler = size_in_mb_pympler(float32_vector_embeddings)
+    # print(f"Memory of float_embeddings: {embed_size_mb_pympler} MB")
+    # print(f"Estimated memory required for 1M float32 embeddings: {float(1_000_000/dataset_size) * (embed_size_mb_pympler/1024)} GB")
+
+    print("Get int8 embeddings and queries")
     int8_vector_embeddings, int8_queries_embeddings = dataset_and_queries_embeddings(int8_docs_stream, 'emb_int8', "int8")
-    print(f"Loaded int8 embeddings and queries. \n\t Example vec slice = {int8_vector_embeddings[0][:5]}"
-           f"\n\t Example query slice = {int8_queries_embeddings[0][:5]}")
-    embed_size_mb_pympler = size_in_mb_pympler(int8_vector_embeddings)
-    print(f"Memory of int8_embeddings: {embed_size_mb_pympler} MB")
-    print(f"Estimated memory required for 1M int8 embeddings: {float(1_000_000/dataset_size) * (embed_size_mb_pympler/1024)} GB")
+    print(f"\n\t Example vec slice = {int8_vector_embeddings[0][:5]}"
+           f"\n\t Example query slice = {int8_queries_embeddings[0][:5]}\n")
+
+    # This doesn't work with pickle'd files for some reason :(
+    # embed_size_mb_pympler = size_in_mb_pympler(int8_vector_embeddings)
+    # print(f"Memory of int8_embeddings: {embed_size_mb_pympler} MB")
+    # print(f"Estimated memory required for 1M int8 embeddings: {float(1_000_000/dataset_size) * (embed_size_mb_pympler/1024)} GB")
 
     # int8_vector_embeddings, int8_dataset_titles, int8_queries_embeddings, int8_queries_titles = dataset_and_queries_embeddings(int8_docs_stream, 'emb_int8')
 
@@ -162,9 +173,10 @@ def main():
     #         mismatch += 1
     # print(f"Title mismatches: {mismatch}")
 
-
+    print("Calculate Ground truth (float32) IDs for knn L2 search")
     gt_res = batch_knn(float32_queries_embeddings, float32_vector_embeddings, k = 10)
 
+    print()
     start_time = time.time()
     correct = 0
     for i, query in enumerate(int8_queries_embeddings):
@@ -172,7 +184,7 @@ def main():
         correct += count_correct(gt_res[i], res)
     recall = correct / (k * queries_num)
     recall_time = time.time() - start_time
-    print(f"Embeddings from model search with k = {k} took {recall_time} seconds. \nRecall: ", recall)
+    print(f"int8 Embeddings from model search with k = {k} took {recall_time} seconds. \nRecall: {recall}\n")
 
     # generate dataset embeddings using a SQ
     print(f"Quantizing embeddings using calibration set of size {calibration_set_size}")
@@ -180,8 +192,8 @@ def main():
     print(f"Quantized embeddings. Example vec slice = {sq_embeddings[0][:10]}")
     embed_size_mb_pympler = size_in_mb_pympler(sq_embeddings)
 
-    print(f"Memory of sq_embeddings: {embed_size_mb_pympler} MB")
-    print(f"Estimated memory required for 1M SQ embeddings: {float(1_000_000/dataset_size) * (embed_size_mb_pympler/1024)} GB")
+    # print(f"Memory of sq_embeddings: {embed_size_mb_pympler} MB")
+    # print(f"Estimated memory required for 1M SQ embeddings: {float(1_000_000/dataset_size) * (embed_size_mb_pympler/1024)} GB")
 
     start_time = time.time()
     correct = 0
