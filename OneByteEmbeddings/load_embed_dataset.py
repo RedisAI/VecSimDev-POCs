@@ -1,4 +1,3 @@
-from tracemalloc import start
 from datasets import load_dataset
 import cohere
 from sentence_transformers.quantization import quantize_embeddings
@@ -98,6 +97,34 @@ def knn_L2(query, doc_embeddings, k = 10):
     # return the top k documents
     return res[0:k]
 
+def knn_cosine(query, doc_embeddings, k=10):
+    res = []
+    # Compute the norm of the query vector
+    query_norm = 1
+    if query.dtype == np.int8:
+        query_norm = sum(int(x) ** 2 for x in query) ** 0.5
+    for id, vec in enumerate(doc_embeddings):
+        # Convert document vector to numpy array with dtype float32
+        # vec = np.array(vec, dtype=np.float32)
+        # Compute the norm of the document vector
+        vec_norm = 1
+        cosine_similarity = 0
+        if vec.dtype == np.int8:
+            vec_norm = sum(int(x) ** 2 for x in vec) ** 0.5
+            cosine_similarity = sum(int(x) * int(y) for x, y in zip(query, vec)) / (query_norm * vec_norm)
+        else:
+            # Compute cosine similarity and then convert to cosine distance
+            cosine_similarity = np.dot(query, vec) / (query_norm * vec_norm)
+        # Compute cosine similarity and then convert to cosine distance
+        cosine_distance = 1.0 - cosine_similarity
+        res.append((cosine_distance, id))
+
+# Process the results as needed
+    # Sort the results by distance
+    res = sorted(res)
+    # Return the top k documents
+    return res[:k]
+
 RES_ID = 1
 def count_correct(gt_results, results):
     # compute how many ids in res appear in GT
@@ -128,13 +155,13 @@ def dataset_and_queries_SQ_embeddings(float_embeddings, float_queries_embeddings
     print(f"Quantizing {len(query_sq_embeddings)} queries embeddings took {quries_time} seconds")
     return dataset_sq_embeddings, query_sq_embeddings
 
-def batch_knn(queries_embeddings, dataset_embeddings, k = 10):
+def batch_knn(queries_embeddings, dataset_embeddings, distance_func, k = 10):
     res = []
     start_time = time.time()
     for query in queries_embeddings:
-        res.append(knn_L2(query, dataset_embeddings, k))
+        res.append(distance_func(query, dataset_embeddings, k))
     batch_knn_time = time.time() - start_time
-    print(f"knn L2 for {len(queries_embeddings)} queries took {batch_knn_time} seconds")
+    print(f"knn {distance_func.__name__} for {len(queries_embeddings)} queries took {batch_knn_time} seconds")
     return res
 
 
@@ -143,6 +170,13 @@ def size_in_mb_pympler(obj):
 
 def main():
     k = 10
+    distance_func = knn_L2
+    print("Run BM with following parameters:"
+          "\n\t dataset_size = ", dataset_size,
+          "\n\t calibration_set_size = ", calibration_set_size,
+          "\n\t queries_num = ", queries_num,
+          "\n\t k = ", k,
+          "\n\t distance_func = ", distance_func.__name__)
 
     # float32_vector_embeddings, float32_dataset_titles, float32_queries_embeddings, float32_queries_titles = dataset_and_queries_embeddings(float32_docs_stream, 'emb')
     print("Get float32 embeddings and queries")
@@ -173,17 +207,20 @@ def main():
     #         mismatch += 1
     # print(f"Title mismatches: {mismatch}")
 
-    print("Calculate Ground truth (float32) IDs for knn L2 search")
-    gt_res = batch_knn(float32_queries_embeddings, float32_vector_embeddings, k = 10)
+    print(f"Calculate Ground truth (float32) IDs for {distance_func.__name__} search")
+    gt_res = batch_knn(float32_queries_embeddings, float32_vector_embeddings, distance_func, k = 10)
+    print(f"float32 Example query_{queries_num - 1} res: {gt_res[9]}")
 
     print()
+    print("calculate recall for int8 embeddings")
     start_time = time.time()
     correct = 0
     for i, query in enumerate(int8_queries_embeddings):
-        res = knn_L2(query, int8_vector_embeddings, k = 10)
+        res = distance_func(query, int8_vector_embeddings, k = 10)
         correct += count_correct(gt_res[i], res)
     recall = correct / (k * queries_num)
     recall_time = time.time() - start_time
+    print(f"int8 Example query_{queries_num - 1} res: {res}")
     print(f"int8 Embeddings from model search with k = {k} took {recall_time} seconds. \nRecall: {recall}\n")
 
     # generate dataset embeddings using a SQ
@@ -198,10 +235,11 @@ def main():
     start_time = time.time()
     correct = 0
     for i, query in enumerate(sq_queries_embeddings):
-        res = knn_L2(query, sq_embeddings, k = 10)
+        res = distance_func(query, sq_embeddings, k = 10)
         correct += count_correct(gt_res[i], res)
     recall = correct / (k * queries_num)
     recall_time = time.time() - start_time
+    print(f"SQ Example query_{queries_num - 1} res: {res}")
     print(f"Scalar quantization embeddings search with k = {k} took {recall_time} seconds. \nRecall: ", recall)
 
 
