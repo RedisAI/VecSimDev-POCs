@@ -1,0 +1,149 @@
+{
+  "context": {
+    "date": "2024-12-15T20:00:50+00:00",
+    "host_name": "ip-172-31-33-161",
+    "executable": "./BenchmarkTest",
+    "num_cpus": 16,
+    "mhz_per_cpu": 3500,
+    "cpu_scaling_enabled": false,
+    "caches": [
+      {
+        "type": "Data",
+        "level": 1,
+        "size": 49152,
+        "num_sharing": 2
+      },
+      {
+        "type": "Instruction",
+        "level": 1,
+        "size": 32768,
+        "num_sharing": 2
+      },
+      {
+        "type": "Unified",
+        "level": 2,
+        "size": 2097152,
+        "num_sharing": 2
+      },
+      {
+        "type": "Unified",
+        "level": 3,
+        "size": 110100480,
+        "num_sharing": 16
+      }
+    ],
+    "load_avg": [0.758789,0.660156,0.844727],
+    "library_version": "v1.9.1-7-gf4f93b55",
+    "library_build_type": "release",
+    "json_schema_version": 1
+  },
+  "benchmarks": [
+    {
+      "name": "BM_vector_norm<SingleSqrt>/32",
+      "family_index": 0,
+      "per_family_instance_index": 0,
+      "run_name": "BM_vector_norm<SingleSqrt>/32",
+      "run_type": "iteration",
+      "repetitions": 1,
+      "repetition_index": 0,
+      "threads": 1,
+      "iterations": 21557351,
+      "real_time": 3.2445310789958356e+01,
+      "cpu_time": 3.2445353002787769e+01,
+      "time_unit": "ns"
+    },
+    {
+      "name": "BM_vector_norm<SingleSqrt>/33",
+      "family_index": 0,
+      "per_family_instance_index": 1,
+      "run_name": "BM_vector_norm<SingleSqrt>/33",
+      "run_type": "iteration",
+      "repetitions": 1,
+      "repetition_index": 0,
+      "threads": 1,
+      "iterations": 18650323,
+      "real_time": 3.7518542279411896e+01,
+      "cpu_time": 3.7518598203366224e+01,
+      "time_unit": "ns"
+    },
+    {
+      "name": "BM_vector_norm<SingleSqrt>/34",
+      "family_index": 0,
+      "per_family_instance_index": 2,
+      "run_name": "BM_vector_norm<SingleSqrt>/34",
+      "run_type": "iteration",
+      "repetitions": 1,
+      "repetition_index": 0,
+      "threads": 1,
+      "iterations": 18671104,
+      "real_time": 3.7545049666099608e+01,
+      "cpu_time": 3.7544879724305545e+01,
+      "time_unit": "ns"
+    },
+    {
+      "name": "BM_vector_norm<SingleSqrt>/35",
+      "family_index": 0,
+      "per_family_instance_index": 3,
+      "run_name": "BM_vector_norm<SingleSqrt>/35",
+      "run_type": "iteration",
+      "repetitions": 1,
+      "repetition_index": 0,
+      "threads": 1,
+      "iterations": 18635353,
+      "real_time": 3.7546613364360731e+01,
+      "cpu_time": 3.7546455653402454e+01,
+      "time_unit": "ns"
+    },
+    {
+      "name": "BM_vector_norm<SingleSqrt>/36",
+      "family_index": 0,
+      "per_family_instance_index": 4,
+      "run_name": "BM_vector_norm<SingleSqrt>/36",
+      "run_type": "iteration",
+      "repetitions": 1,
+      "repetition_index": 0,
+      "threads": 1,
+      "iterations": 20090148,
+      "real_time": 3.4845089593177910e+01,
+      "cpu_time": 3.4844985213647973e+01,
+      "time_unit": "ns"
+    },
+    {
+      "name": "BM_vector_norm<SingleSqrt>/37",
+      "family_index": 0,
+      "per_family_instance_index": 5,
+      "run_name": "BM_vector_norm<SingleSqrt>/37",
+      "run_type": "iteration",
+      "repetitions": 1,
+      "repetition_index": 0,
+      "threads": 1,
+      "iterations": 17666166,
+      "real_time": 3.9571207244350255e+01,
+      "cpu_time": 3.9571066127194818e+01,
+      "time_unit": "ns"
+    },
+    {
+      "name": "BM_vector_norm<SingleSqrt>/38",
+      "family_index": 0,
+      "per_family_instance_index": 6,
+      "run_name": "BM_vector_norm<SingleSqrt>/38",
+      "run_type": "iteration",
+      "repetitions": 1,
+      "repetition_index": 0,
+      "threads": 1,
+      "iterations": 17655586,
+      "real_time": 3.9603100684424028e+01,
+      "cpu_time": 3.9603161968115927e+01,
+      "time_unit": "ns"
+    },
+    {
+      "name": "BM_vector_norm<SingleSqrt>/39",
+      "family_index": 0,
+      "per_family_instance_index": 7,
+      "run_name": "BM_vector_norm<SingleSqrt>/39",
+      "run_type": "iteration",
+      "repetitions": 1,
+      "repetition_index": 0,
+      "threads": 1,
+      "iterations": 17724217,
+      "
