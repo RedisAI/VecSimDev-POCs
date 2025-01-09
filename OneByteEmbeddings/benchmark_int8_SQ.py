@@ -15,9 +15,10 @@ api_key = os.getenv("COHERE_API_KEY")
 co = cohere.Client(api_key)
 
 # Constants
+VERBOSE_MODE = False
 LANG = "en" # Use the English Wikipedia subset
 DATASET_SIZE = 1_000_000
-CALIBRATION_SET_SIZE = DATASET_SIZE // 1
+CALIBRATION_SET_SIZE = DATASET_SIZE // 10
 QUERIES_DATASET_SIZE = 100
 QUERIES_NUM = 10
 K = 10
@@ -179,23 +180,40 @@ class DistanceCalculator:
         return res[:k]
 
 class QuantizationProcessor:
-    @staticmethod
-    def dataset_and_queries_SQ_embeddings(float_embeddings, float_queries_embeddings):
+    def __init__(self, dim=0, precision:str="int8"):
+        self.N = 255 # 2^B - 1
+        self.dim = dim
+        self.precision = precision
+        if precision == "uint8":
+            self.offset = 0
+        elif precision == "int8":
+            self.offset = 128
+
+    def train(self, train_dataset: np.ndarray):
+        # Assuming train_dataset is a numpy array with shape (n_train_vec, self.dim)
+        self.x_min = train_dataset.min(axis=0)  # Find the minimum value in each dimension
+        self.delta = (train_dataset.max(axis=0) - self.x_min) / self.N  # Calculate delta for each dimension
+
+    def quantize(self, dataset: np.ndarray):
+        q_vals = np.floor((dataset - self.x_min) / self.delta)
+        # use int32 to avoid overflow if type is uint8
+        q_vals = np.clip(q_vals, 0, self.N).astype(numpy_types_dict[self.precision])
+        q_vals -= self.offset
+        return q_vals
+
+    def decompress(self, x):
+        return (self.delta * (x + 0.5 + self.offset).astype(np.float32)) + self.x_min
+
+    def dataset_and_queries_SQ_embeddings(self, float_embeddings, float_queries_embeddings):
         start_time = time.time()
-        dataset_sq_embeddings = quantize_embeddings(
-            float_embeddings,
-            precision="int8",
-            calibration_embeddings=float_embeddings[:CALIBRATION_SET_SIZE],
-        )
+        self.train(float_embeddings[:CALIBRATION_SET_SIZE])
+
+        dataset_sq_embeddings = self.quantize(float_embeddings)
         dataset_time = time.time() - start_time
         print(f"Quantizing {len(dataset_sq_embeddings)} dataset embeddings took {dataset_time} seconds")
 
         start_time = time.time()
-        query_sq_embeddings = quantize_embeddings(
-            float_queries_embeddings,
-            precision="int8",
-            calibration_embeddings=float_embeddings[:CALIBRATION_SET_SIZE],
-        )
+        query_sq_embeddings = self.quantize(float_queries_embeddings)
         queries_time = time.time() - start_time
         print(f"Quantizing {len(query_sq_embeddings)} queries embeddings took {queries_time} seconds")
         return dataset_sq_embeddings, query_sq_embeddings
@@ -207,19 +225,19 @@ class Benchmark:
         self.k = k
         self.results_file = results_file
 
-    def write_recall_to_csv(self, func_name, recall_int8, recall_SQ):
+    def write_recall_to_csv(self, func_name, recall_int8, recall_SQ, recall_SQ_decomp):
         csv_file_path = self.results_file
         # Check if the CSV file exists
         if not os.path.exists(csv_file_path):
             # Create a new file and write the header
             with open(csv_file_path, 'w', newline='') as csvfile:
                 writer = csv.writer(csvfile)
-                writer.writerow(['metric', 'int8', 'SQ'])
+                writer.writerow(['metric', 'int8', 'SQ', 'SQ_decompressed'])
 
         # Append the recall values
         with open(csv_file_path, 'a', newline='') as csvfile:
             writer = csv.writer(csvfile)
-            writer.writerow([func_name, recall_int8, recall_SQ])
+            writer.writerow([func_name, recall_int8, recall_SQ, recall_SQ_decomp])
 
     def count_correct(self, gt_results, results):
         correct = 0
@@ -236,61 +254,68 @@ class Benchmark:
         for query in queries_embeddings[:queries_num]:
             res.append(distance_func(query, dataset_embeddings, k))
         batch_knn_time = time.time() - start_time
-        print(f"knn {distance_func.__name__} for {queries_num} queries took {batch_knn_time} seconds")
+        print(f"Search took {batch_knn_time} seconds")
         assert len(res) == queries_num, f"expected {len(queries_embeddings)} == {len(res)} == {queries_num}"
         return res
 
-    def compute_recall(self, distance_func):
-        print(f"Running benchmark with distance function: {distance_func.__name__}")
+    def timed_compute_recall(self, distance_func, queries, vectors):
+        start_time = time.time()
+        correct = 0
+        for i, query in enumerate(queries[:QUERIES_NUM]):
+            res = distance_func(query, vectors)
+            correct += self.count_correct(self.gt_res[i], res)
+        recall = correct / (K * QUERIES_NUM)
+        recall_time = time.time() - start_time
+        print(f"Search took {recall_time} seconds. \nRecall: {recall}")
+        if VERBOSE_MODE:
+            print(f"Example query_{QUERIES_NUM - 1} res: {res}")
+            print(f"Best result for query_{QUERIES_NUM - 1}:")
+            self.print_query_answer(QUERIES_NUM - 1, res[0][RES_ID], self.int8_loader)
+        return recall
+
+    def run(self, distance_func):
 
         float32_vector_embeddings = self.float32_loader.load_embeddings()
         float32_queries_embeddings = self.float32_loader.load_queries()
-        print(f"\n\t Example vec slice = {float32_vector_embeddings[0][:5]}"
-              f"\n\t Example query slice = {float32_queries_embeddings[0][:5]}\n")
+        if VERBOSE_MODE:
+            print(f"\n\t Example vec slice = {float32_vector_embeddings[0][:5]}"
+                f"\n\t Example query slice = {float32_queries_embeddings[0][:5]}\n")
 
         int8_vector_embeddings = self.int8_loader.load_embeddings()
         int8_queries_embeddings = self.int8_loader.load_queries()
-        print(f"\n\t Example vec slice = {int8_vector_embeddings[0][:5]}"
-              f"\n\t Example query slice = {int8_queries_embeddings[0][:5]}\n")
+        if VERBOSE_MODE:
+            print(f"\n\t Example vec slice = {int8_vector_embeddings[0][:5]}"
+                f"\n\t Example query slice = {int8_queries_embeddings[0][:5]}\n")
 
-        print(f"Calculate Ground truth (float32) IDs for {distance_func.__name__} search with {QUERIES_NUM} queries")
-        gt_res = self.batch_knn(QUERIES_NUM, float32_queries_embeddings, float32_vector_embeddings, distance_func)
-        print(f"float32 Example query_{QUERIES_NUM - 1} res: {gt_res[QUERIES_NUM - 1]}")
-        print(f"Best result for query_{QUERIES_NUM - 1}:")
-        print(f"{self.print_query_answer(QUERIES_NUM - 1, gt_res[QUERIES_NUM - 1][0][RES_ID], self.float32_loader)}")
+        print(f"\nRunning benchmark with distance function: {distance_func.__name__}\n")
 
-        print()
+        print(f"\nCalculate Ground truth (float32) IDs for {distance_func.__name__} search with {QUERIES_NUM} queries")
+        self.gt_res = self.batch_knn(QUERIES_NUM, float32_queries_embeddings, float32_vector_embeddings, distance_func)
+        if VERBOSE_MODE:
+            print(f"float32 Example query_{QUERIES_NUM - 1} res: {self.gt_res[QUERIES_NUM - 1]}")
+            print(f"Best result for query_{QUERIES_NUM - 1}:")
+            print(f"{self.print_query_answer(QUERIES_NUM - 1, self.gt_res[QUERIES_NUM - 1][0][RES_ID], self.float32_loader)}")
+
+        print("\n====================\n")
         print("Calculate recall for int8 embeddings")
-        start_time = time.time()
-        correct = 0
-        for i, query in enumerate(int8_queries_embeddings[:QUERIES_NUM]):
-            res = distance_func(query, int8_vector_embeddings)
-            correct += self.count_correct(gt_res[i], res)
-        int8_recall = correct / (K * QUERIES_NUM)
-        recall_time = time.time() - start_time
-        print(f"int8 Embeddings from model search with k = {K} took {recall_time} seconds. \nRecall: {int8_recall}\n")
-        print(f"int8 Example query_{QUERIES_NUM - 1} res: {res}")
-        print(f"Best result for query_{QUERIES_NUM - 1}:")
-        print(f"{self.print_query_answer(QUERIES_NUM - 1, res[0][RES_ID], self.int8_loader)}")
+        int8_recall = self.timed_compute_recall(distance_func, int8_queries_embeddings, int8_vector_embeddings)
 
-
+        print("\n====================\n")
+        print("\nCalculate recall with scalar quantization")
         print(f"Quantizing embeddings using calibration set of size {CALIBRATION_SET_SIZE}")
-        sq_embeddings, sq_queries_embeddings = QuantizationProcessor.dataset_and_queries_SQ_embeddings(float32_vector_embeddings, float32_queries_embeddings)
-        print(f"Quantized embeddings. Example vec slice = {sq_embeddings[0][:10]}")
+        quantizer = QuantizationProcessor(dim=float32_vector_embeddings.shape[1], precision="int8")
+        print("\nCalculate recall in compressed space")
+        sq_embeddings, sq_queries_embeddings = quantizer.dataset_and_queries_SQ_embeddings(float32_vector_embeddings, float32_queries_embeddings)
+        if VERBOSE_MODE:
+            print(f"Quantized embeddings. Example vec slice = {sq_embeddings[0][:10]}")
 
-        start_time = time.time()
-        correct = 0
-        for i, query in enumerate(sq_queries_embeddings[:QUERIES_NUM]):
-            res = distance_func(query, sq_embeddings)
-            correct += self.count_correct(gt_res[i], res)
-        SQ_recall = correct / (K * QUERIES_NUM)
-        recall_time = time.time() - start_time
-        print(f"Scalar quantization embeddings search with k = {K} took {recall_time} seconds. \nRecall: {SQ_recall}")
-        print(f"SQ Example query_{QUERIES_NUM - 1} res: {res}")
-        print(f"Best result for query_{QUERIES_NUM - 1}:")
-        self.print_query_answer(QUERIES_NUM - 1, res[0][RES_ID], self.int8_loader)
-
-        self.write_recall_to_csv(distance_func.__name__, int8_recall, SQ_recall)
+        SQ_recall = self.timed_compute_recall(distance_func, sq_queries_embeddings, sq_embeddings)
+        print("\nCalculate recall in decompressed space")
+        decompressed_sq_embeddings = quantizer.decompress(sq_embeddings)
+        assert decompressed_sq_embeddings.dtype == np.float32, f"expected float32 but got {decompressed_sq_embeddings.dtype}"
+        assert float32_queries_embeddings.dtype == np.float32, f"expected float32 but got {float32_queries_embeddings.dtype}"
+        SQ_recall_decomp = self.timed_compute_recall(distance_func, float32_queries_embeddings, decompressed_sq_embeddings)
+        self.write_recall_to_csv(distance_func.__name__, int8_recall, SQ_recall, SQ_recall_decomp)
 
     @staticmethod
     def print_query_answer(query_idx: int, vec_idx: int, loader):
@@ -327,8 +352,8 @@ def main():
 
     csv_file_name = f"{DATASET_SIZE}_vecs_{CALIBRATION_SET_SIZE}_calibration_{QUERIES_DATASET_SIZE}_queries_{QUERIES_NUM}_k_{K}_recall.csv"
     benchmark = Benchmark(float32_loader, int8_loader, csv_file_name)
-    benchmark.compute_recall(DistanceCalculator.knn_cosine)
-    benchmark.compute_recall(DistanceCalculator.knn_L2)
+    benchmark.run(DistanceCalculator.knn_cosine)
+    benchmark.run(DistanceCalculator.knn_L2)
 
 if __name__ == "__main__":
     main()
