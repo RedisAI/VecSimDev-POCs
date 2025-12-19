@@ -229,7 +229,7 @@ def inject_local_data_into_redis(base_path, index, max_docs=MAX_DOCS, skip_if_na
                 print(f"Error processing image {image_path}: {e}")
                 continue
 
-def query_redis(target_image_path, index, client, threshold=SAFE_THRESHOLD, num_results=1):
+def query_redis(target_image_path, index, label, threshold=SAFE_THRESHOLD, num_results=1):
     """
     Perform a vector similarity search in Redis and display visual results.
 
@@ -296,7 +296,7 @@ def query_redis(target_image_path, index, client, threshold=SAFE_THRESHOLD, num_
         print(f"\nMatch found: {match_name}, Similarity: {1 - match_distance:.2f}")
         display_images_side_by_side(
             [target_image, match_image],
-            ["Target_Image", f"Best_Match: {match_name}"]
+            [f"{label}", f"Best Match: {match_name}, Similarity: {1 - match_distance:.2f}"]
         )
 
 client = Redis(host="localhost", port=6379)
@@ -335,7 +335,7 @@ add_more = [
 
 # Test queries
 test_cases = [
-    ("/home/ubuntu/VecSimDev-POCs/CelebsDemo/uploads/Dudi3.jpg", "Dudi3"),
+    ("/workspaces/Code/VecSimDev-POCs/CelebsDemo/uploads/Mwe.jpg", "Mwe"),
     ("https://people.com/thmb/6lv2ts3_inac7CLVSoMYSAUGwow=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc():focal(749x0:751x2)/cher-fw-tout-1010-fa15ee6f98824650a2f92f6e9665b7af.jpg", "cher"),
     ("https://people.com/thmb/cS-3Y34QFwEbRO_x50acJP3MwbQ=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc():focal(734x348:736x350)/Tom-Hanks-That-Thing-You-Do-110624-NA-tout-d517a235093747949aec98449b8b9245.jpg", "Tom Hanks"),
     ("https://github.com/serengil/deepface/raw/master/tests/dataset/img2.jpg", "Angelina Jolie"),
@@ -347,4 +347,4 @@ test_cases = [
 # initialize_all(reset=False, skip_if_name_exists=True, force_skip=True)
 for image_url, label in test_cases[:1]:
     print(f"\n--- Testing: {label} ---")
-    query_redis(image_url, index, client, threshold=SAFE_THRESHOLD, num_results=1)
+    query_redis(image_url, index, label, threshold=SAFE_THRESHOLD, num_results=1)

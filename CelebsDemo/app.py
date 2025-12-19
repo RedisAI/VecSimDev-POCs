@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS  # Import CORS
 
 import os
@@ -27,6 +27,14 @@ def upload_file():
     # Save the file to server (local path for testing)
     file.save(f"./uploads/{name}.jpg")
     return jsonify({"message": "File uploaded successfully!"})
+
+@app.route('/')
+def serve_html():
+    return send_from_directory('.', 'index.html')
+
+@app.route('/<path:filename>')
+def serve_static(filename):
+    return send_from_directory('.', filename)
 
 if __name__ == '__main__':
     app.run(host="0.0.0.0", port=5000, debug=True)
