@@ -1,0 +1,18 @@
+# Core dependencies
+numpy>=1.21.0
+redis>=4.5.0
+redisvl>=0.0.8
+Pillow>=9.0.0
+matplotlib>=3.5.0
+
+# Deep learning and face recognition
+deepface>=0.0.79
+tensorflow>=2.10.0
+opencv-python-headless>=4.5.5.64
+
+# Web framework
+Flask>=2.2.0
+flask-cors>=4.0.0
+
+# Image processing and utilities
+requests>=2.27.1
