@@ -88,13 +88,13 @@ def generate_embedding(image):
     try:
         # Convert PIL Image to numpy array
         img_array = np.array(image)
-        
+
         # Generate embedding
         encodings = face_recognition.face_encodings(img_array)
-        
+
         if len(encodings) == 0:
             return None
-        
+
         return encodings[0]
     except Exception as e:
         st.error(f"Error generating embedding: {e}")
@@ -104,7 +104,7 @@ def generate_embedding(image):
 def visualize_embedding(embedding):
     """Create a visual representation of the 128-dim embedding."""
     fig = go.Figure()
-    
+
     fig.add_trace(go.Bar(
         x=list(range(len(embedding))),
         y=embedding,
@@ -116,7 +116,7 @@ def visualize_embedding(embedding):
         ),
         hovertemplate='Dimension: %{x}<br>Value: %{y:.4f}<extra></extra>'
     ))
-    
+
     fig.update_layout(
         title="128-Dimensional Face Embedding Vector",
         xaxis_title="Dimension",
@@ -124,23 +124,23 @@ def visualize_embedding(embedding):
         height=300,
         margin=dict(l=20, r=20, t=40, b=20)
     )
-    
+
     return fig
 
 
 def search_redis(client, embedding, top_k=5):
     """
     Search Redis for similar faces using vector similarity.
-    
+
     Returns: list of (name, image_path, distance) tuples
     """
     try:
         # Convert embedding to bytes
         embedding_bytes = np.array(embedding, dtype=np.float32).tobytes()
-        
+
         # Build KNN query
         query = f"*=>[KNN {top_k} @embedding $vec AS distance]"
-        
+
         # Execute search
         start_time = time.time()
         results = client.ft(INDEX_NAME).search(
@@ -148,17 +148,18 @@ def search_redis(client, embedding, top_k=5):
             query_params={"vec": embedding_bytes}
         )
         search_time = (time.time() - start_time) * 1000  # Convert to ms
-        
+
         # Parse results
         matches = []
         for doc in results.docs:
-            name = doc.name.decode('utf-8')
-            image_path = doc.image_path.decode('utf-8')
+            # Handle both bytes and str (depending on Redis client settings)
+            name = doc.name.decode('utf-8') if isinstance(doc.name, bytes) else doc.name
+            image_path = doc.image_path.decode('utf-8') if isinstance(doc.image_path, bytes) else doc.image_path
             distance = float(doc.distance)
             matches.append((name, image_path, distance))
-        
+
         return matches, search_time
-    
+
     except Exception as e:
         st.error(f"Search error: {e}")
         return [], 0
@@ -275,6 +276,19 @@ streamlit run streamlit_app.py
         st.markdown("---")
         st.header("🧬 Face Embedding Visualization")
         st.plotly_chart(visualize_embedding(embedding), use_container_width=True)
+
+        # Show embedding details
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Vector Dimensions", len(embedding))
+        with col2:
+            st.metric("Min Value", f"{embedding.min():.4f}")
+        with col3:
+            st.metric("Max Value", f"{embedding.max():.4f}")
+
+        with st.expander("📊 View Raw Embedding Values"):
+            st.markdown("**Full embedding vector:**")
+            st.code(f"[{', '.join([f'{val:.4f}' for val in embedding[:10]])}...] ({len(embedding)} dimensions total)", language="python")
 
         with st.expander("ℹ️ What is a face embedding?"):
             st.markdown("""

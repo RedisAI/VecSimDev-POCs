@@ -22,7 +22,7 @@ from tqdm import tqdm
 from PIL import Image
 
 # Configuration
-DATASET_DIR = "pins_dataset"
+DATASET_DIR = "pins_dataset/105_classes_pins_dataset"
 OUTPUT_FILE = "celebrity_embeddings.pkl"
 MAX_IMAGES_PER_CELEBRITY = None  # None = process all images
 
@@ -132,7 +132,10 @@ def process_dataset():
     print(f"\n📊 Summary:")
     print(f"   Total embeddings generated: {total_processed}")
     print(f"   Total failed: {total_failed}")
-    print(f"   Success rate: {total_processed / (total_processed + total_failed) * 100:.1f}%")
+    if total_processed + total_failed > 0:
+        print(f"   Success rate: {total_processed / (total_processed + total_failed) * 100:.1f}%")
+    else:
+        print(f"   Success rate: N/A (no images processed)")
     
     return embeddings_data
 
@@ -179,4 +182,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
