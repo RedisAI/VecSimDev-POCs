@@ -17,7 +17,7 @@ Perfect for demonstrating the "magic" of vector search to non-technical audience
 ### Demo Day (Instant!)
 
 ```bash
-docker-compose up -d
+docker compose up -d
 streamlit run streamlit_app.py
 ```
 
@@ -136,4 +136,3 @@ python 3_load_to_redis.py
 **Ready to wow your audience with Redis vector search!** 🚀✨
 
 For detailed instructions, see [celebrity_demo_README.md](celebrity_demo_README.md)
-
